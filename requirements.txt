@@ -1,1 +1,5 @@
-
+ultralytics
+fastapi
+uvicorn
+opencv-python
+pillow
