@@ -3,7 +3,7 @@ import os
 
 def extract_frames(video_path, output_folder, frame_interval=10):
 
-    os.makedirs(output_folder, exist=True)
+    os.makedirs(output_folder, exist_ok=True)
 
     cap = cv2.VideoCapture(video_path)
 
