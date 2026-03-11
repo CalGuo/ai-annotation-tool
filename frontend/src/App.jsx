@@ -1,6 +1,7 @@
 import { useState, useRef } from "react"
 import JSZip from "jszip"
 import { saveAs } from "file-saver"
+import "./dashboard.css"
 
 function App() {
   const [drawing, setDrawing] = useState(false)
@@ -219,8 +220,12 @@ function App() {
     if (frameBoxes.length === 0) return
 
     const updatedAnnotations = { ...annotations }
-    updatedAnnotations[currentFrame] = frameBoxes.slice(0, -1)
+    const newBoxes = frameBoxes.slice(0, -1)
+
+    updatedAnnotations[currentFrame] = newBoxes
     setAnnotations(updatedAnnotations)
+
+    drawBoxes(newBoxes)
   }
 
   const exportAnnotations = () => {
@@ -282,89 +287,202 @@ function App() {
   const totalFrames = images.length
   const framesAnnotated = Object.values(annotations).filter(boxes => boxes.length > 0).length
   const totalBoxes = Object.values(annotations).reduce((sum, boxes) => sum + boxes.length, 0)
+  const annotationProgress = totalFrames === 0 ? 0 : Math.round((framesAnnotated / totalFrames) * 100)
 
   return (
-    <div style={{padding:40}}>
-      <h1>AI Annotation Tool</h1>
-      <input
-        type="file"
-        multiple
-        onChange={handleFileUpload}
-        />
-        <button onClick={handleDetection} disabled={images.length === 0}>
-          Run AI Detection
-        </button>
-        <button onClick={runDetectionAllFrames}>
-          Run Detection on All Frames
-        </button>
-        <button onClick={exportAnnotations}>
-          Export Current Frame
-        </button>
-        <button onClick={exportDataset}>
-          Export Full Dataset
-        </button>
-        <div style={{marginTop:20}}>
-        <button onClick={prevFrame}>Previous</button>
-        <span style={{margin:"0 10px"}}>Frame {currentFrame + 1} / {images.length}</span>
-        <button onClick={nextFrame}>Next</button>
-        </div>
-        <button onClick={undoLastBox}
-                disabled={(annotations[currentFrame] || []).length === 0}>
-          Undo Last Annotation
-        </button>
-        <div style={{
-          marginTop:20,
-          padding:15,
-          border:"1px solid #ccc",
-          width:"300px",
-          }}>
-        <h3>Annotation Stats</h3>
-        <p>Total Frames: {totalFrames}</p>
-        <p>Frames Annotated: {framesAnnotated}</p>
-        <p>Total Boxes: {totalBoxes}</p>
-        </div>
-        <div style={{marginTop:20}}>
-          <h3>Upload Video</h3>
-          <input
-            type="file"
-            accept="video/*"
-            onChange={(e) => setVideoFile(e.target.files[0])}
-          />
-          <input
-            type="number"
-            value={frameCount}
-            onChange={(e) => setFrameCount(parseInt(e.target.value))}
-            placeholder="Number of frames to extract"
-          />
-          <button onClick={uploadVideo} disabled={!videoFile}>
-          Extract Frames
-          </button>
-        </div>
-        <div style={{position:"relative", marginTop:20}}>
-          {images.length > 0 && (
-            <>
-              <img
-                ref={imageRef}
-                src={images[currentFrame]}
-                alt="uploaded"
-                style={{maxWidth:"600px"}}
-                onLoad={() => drawBoxes(annotations[currentFrame] || [])}
+    <>
+      <div className="dash-shell">
+        <header className="topbar">
+          <div className="topbar-logo">
+            <div className="topbar-logo-dot" />
+            AI Annotation Tool
+          </div>
+          <div className="topbar-divider" />
+          <span className="topbar-route">workspace</span>
+          <div className="topbar-badge">YOLOv8</div>
+        </header>
+        <aside className="sidebar">
+          <div className="sidebar-section-label">Navigation</div>
+          <div className="frame-nav">
+            <div className="frame-nav-label">Frame</div>
+            <div className="frame-counter">
+              {images.length > 0 ? String(currentFrame + 1).padStart(2, "0") : "-"}
+              <span> / {images.length > 0 ? String(images.length).padStart(2, "0") : "-"}</span>
+            </div>
+            <div className="frame-btn-row">
+              <button className="btn btn-nav" onClick={prevFrame} disabled={currentFrame === 0}>
+                ← Prev
+              </button>
+              <button className="btn btn-nav" onClick={nextFrame} disabled={currentFrame >= images.length - 1}>
+                Next →
+              </button>
+            </div>
+          </div>
+          <div className="stats-card">
+            <div className="stats-card-title">Statistics</div>
+            <div className="stat-row">
+              <span className="stat-label">Total Frames</span>
+              <span className="stat-value">{totalFrames}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-label">Annotated Frames</span>
+              <span className="stat-value">{framesAnnotated}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-label">Total Boxes</span>
+              <span className="stat-value">{totalBoxes}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-label">This Frame</span>
+              <span className="stat-value">{frameBoxes.length}</span>
+            </div>
+            <div className="progress-bar-wrap">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${annotationProgress}%` }}
               />
-              <canvas
-                ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                style={{position:"absolute",
-                        top:0,
-                        left:0,
-                        maxWidth:"600px"}}
-              />
-            </>
-          )}
-        </div>
-    </div>
-    )
-  }
+            </div>
+            <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#475569", marginTop: 6, textAlign: "right" }}>
+              {annotationProgress}% complete
+            </div>
+          </div>
+
+        </aside>
+        <main className="main-content">
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-dot" />
+              <span className="panel-title">Source</span>
+            </div>
+            <div className="panel-body">
+              <div className="controls-grid">
+                <div>
+                  <label className="file-input-label">
+                    <span>Upload Images</span>
+                    <input type="file" multiple onChange={handleFileUpload} />
+                  </label>
+                  {images.length > 0 && (
+                    <div className="file-status">✓ {images.length} image{images.length !== 1 ? "s" : ""} loaded</div>
+                  )}
+                </div>
+                <div>
+                  <label className="file-input-label">
+                    <span>{videoFile ? videoFile.name : "Upload Video"}</span>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => setVideoFile(e.target.files[0])}
+                    />
+                  </label>
+                  <div className="number-input-row">
+                    <span className="number-input-label">Frames:</span>
+                    <input
+                      className="number-input"
+                      type="number"
+                      value={frameCount}
+                      onChange={(e) => setFrameCount(parseInt(e.target.value))}
+                      placeholder="10"
+                    />
+                    <button
+                      className="btn btn-secondary"
+                      onClick={uploadVideo}
+                      disabled={!videoFile}
+                      style={{ flex: 1 }}
+                    >
+                      Extract
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-dot" style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }} />
+              <span className="panel-title">Detection &amp; Export</span>
+            </div>
+            <div className="panel-body">
+              <div className="controls-grid">
+                <button
+                  className="btn btn-primary"
+                  onClick={handleDetection}
+                  disabled={images.length === 0}
+                >
+                  Run AI Detection
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={runDetectionAllFrames}
+                  disabled={images.length === 0}
+                >
+                  Detect All Frames
+                </button>
+                <button
+                  className="btn btn-success"
+                  onClick={exportAnnotations}
+                  disabled={frameBoxes.length === 0}
+                >
+                  Export Current Frame
+                </button>
+                <button
+                  className="btn btn-success"
+                  onClick={exportDataset}
+                  disabled={images.length === 0}
+                >
+                  Export Full Dataset
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={undoLastBox}
+                  disabled={(annotations[currentFrame] || []).length === 0}
+                >
+                  Undo Last Annotation
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="panel viewer-panel" style={{ flex: 1 }}>
+            <div className="panel-header">
+              <div className="panel-dot" style={{ background: "#34d399", boxShadow: "0 0 6px #34d399" }} />
+              <span className="panel-title">
+                Annotation Viewer
+                {images.length > 0 && (
+                  <span style={{ marginLeft: 12, color: "#475569", fontSize: 10 }}>
+                    — Frame {currentFrame + 1} of {images.length} · {frameBoxes.length} box{frameBoxes.length !== 1 ? "es" : ""}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="panel-body" style={{ padding: 0 }}>
+              {images.length === 0 ? (
+                <div className="viewer-empty">
+                  <div className="viewer-empty-icon">[FRAME]</div>
+                  <div>No images loaded</div>
+                  <div style={{ fontSize: 11, color: "#1e2330" }}>Upload images or extract video frames above</div>
+                </div>
+              ) : (
+                <div className="viewer-img-wrap">
+                  <img
+                    ref={imageRef}
+                    src={images[currentFrame]}
+                    alt="annotation frame"
+                    onLoad={() => drawBoxes(annotations[currentFrame] || [])}
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+        </main>
+      </div>
+    </>
+  )
+}
 
 export default App
