@@ -4,6 +4,11 @@ function App() {
   const [file, setFile] = useState(null)
   const [imageURL, setImageURL] = useState(null)
   const [detections, setDetections] = useState([])
+  const [boxes, setBoxes] = useState([])
+  const [drawing, setDrawing] = useState(false)
+  const [startX, setStartX] = useState(0)
+  const [startY, setStartY] = useState(0)
+
   const canvasRef = useRef(null)
   const imageRef = useRef(null)
 
@@ -18,6 +23,7 @@ function App() {
 
     const data = await response.json()
     setDetections(data.detections)
+    setBoxes(data.detections)
     drawBoxes(data.detections)
   }
 
@@ -29,6 +35,8 @@ function App() {
   }
 
   const drawBoxes = (boxes) => {
+    if (!canvasRef.current || !imageRef.current) return
+
     const canvas = canvasRef.current
     const ctx = canvas.getContext("2d")
     const img = imageRef.current
@@ -36,8 +44,8 @@ function App() {
     const displayWidth = img.clientWidth
     const displayHeight = img.clientHeight
 
-    canvas.width = img.width
-    canvas.height = img.height
+    canvas.width = displayWidth
+    canvas.height = displayHeight
 
     const scaleX = displayWidth / img.naturalWidth
     const scaleY = displayHeight / img.naturalHeight
@@ -57,6 +65,55 @@ function App() {
       ctx.fillText(box.confidence.toFixed(2), x, y - 5)
     })
   }
+
+  const handleMouseDown = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect()
+    setStartX(e.clientX - rect.left)
+    setStartY(e.clientY - rect.top)
+    setDrawing(true)
+  }
+
+  const handleMouseUp = (e) => {
+    if (!drawing) return
+    const rect = canvasRef.current.getBoundingClientRect()
+    const endX = e.clientX - rect.left
+    const endY = e.clientY - rect.top
+
+    const img = imageRef.current
+    const scaleX = img.naturalWidth / img.clientWidth
+    const scaleY = img.naturalHeight / img.clientHeight
+    
+    const newBox = {
+      x1: startX * scaleX,
+      y1: startY * scaleY,
+      x2: endX * scaleX,
+      y2: endY * scaleY,
+      confidence: 1.0
+    }
+
+    const updatedBoxes = [...boxes, newBox]
+
+    setBoxes(updatedBoxes)
+    drawBoxes(updatedBoxes)
+    setDrawing(false)
+  }
+
+  const handleMouseMove = (e) => {
+  if (!drawing) return
+
+  const canvas = canvasRef.current
+  const ctx = canvas.getContext("2d")
+  const rect = canvas.getBoundingClientRect()
+
+  const currentX = e.clientX - rect.left
+  const currentY = e.clientY - rect.top
+
+  drawBoxes(boxes)
+
+  ctx.strokeStyle = "blue"
+  ctx.lineWidth = 2
+  ctx.strokeRect(startX, startY, currentX - startX, currentY - startY)
+}
 
   return (
     <div style={{padding:40}}>
@@ -80,7 +137,13 @@ function App() {
               />
               <canvas
                 ref={canvasRef}
-                style={{position:"absolute", top:0, left:0}}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                style={{position:"absolute",
+                        top:0,
+                        left:0,
+                        maxWidth:"600px"}}
               />
             </>
           )}
