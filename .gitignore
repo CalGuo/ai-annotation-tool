@@ -208,3 +208,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# temporary files
+temp_*
+*.mp4
+*.jpg
+*.png

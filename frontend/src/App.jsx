@@ -9,6 +9,8 @@ function App() {
   const [images, setImages] = useState([])
   const [currentFrame, setCurrentFrame] = useState(0)
   const [annotations, setAnnotations] = useState({})
+  const [videoFile, setVideoFile] = useState(null)
+  const [frameCount, setFrameCount] = useState(10)
 
   const canvasRef = useRef(null)
   const imageRef = useRef(null)
@@ -22,12 +24,57 @@ function App() {
       method: "POST",
       body: formData
     })
-
     const data = await res.json()
     const updatedAnnotations = { ...annotations }
     updatedAnnotations[currentFrame] = data.detections
     setAnnotations(updatedAnnotations)
     drawBoxes(data.detections)
+  }
+
+  const runDetectionAllFrames = async () => {
+    if (images.length === 0) return
+    const updatedAnnotations = { ...annotations }
+
+    for (let i = 0; i < images.length; i++) {
+      const response = await fetch(images[i])
+      const blob = await response.blob()
+      const formData = new FormData()
+      formData.append("file", blob)
+      const res = await fetch("http://127.0.0.1:8000/predict", {
+        method: "POST",
+        body: formData
+      })
+      const data = await res.json()
+      updatedAnnotations[i] = data.detections
+    }
+    setAnnotations(updatedAnnotations)
+    drawBoxes(updatedAnnotations[currentFrame])
+  }
+
+  const uploadVideo = async () => {
+    const formData = new FormData()
+    formData.append("file", videoFile)
+    formData.append("frame_count", frameCount)
+
+    const res = await fetch("http://127.0.0.1:8000/extract_frames", {
+      method: "POST",
+      body: formData
+    })
+    const data = await res.json()
+
+    const urls = data.frames.map(hex => {
+      const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)))
+      const blob = new Blob([bytes], { type: "image/jpeg" })
+      return URL.createObjectURL(blob)
+    })
+
+    setImages(urls)
+    const initialAnnotations = {}
+    urls.forEach((_, i) => {
+      initialAnnotations[i] = []
+    })
+    setAnnotations(initialAnnotations)
+    setCurrentFrame(0)
   }
 
   const exportDataset = async () => {
@@ -146,6 +193,7 @@ function App() {
     updatedAnnotations[currentFrame] = [...frameBoxes, newBox]
 
     setAnnotations(updatedAnnotations)
+    drawBoxes(updatedAnnotations[currentFrame])
     setDrawing(false)
   }
 
@@ -164,6 +212,15 @@ function App() {
   ctx.strokeStyle = "blue"
   ctx.lineWidth = 2
   ctx.strokeRect(startX, startY, currentX - startX, currentY - startY)
+  }
+
+  const undoLastBox = () => {
+    const frameBoxes = annotations[currentFrame] || []
+    if (frameBoxes.length === 0) return
+
+    const updatedAnnotations = { ...annotations }
+    updatedAnnotations[currentFrame] = frameBoxes.slice(0, -1)
+    setAnnotations(updatedAnnotations)
   }
 
   const exportAnnotations = () => {
@@ -237,6 +294,9 @@ function App() {
         <button onClick={handleDetection} disabled={images.length === 0}>
           Run AI Detection
         </button>
+        <button onClick={runDetectionAllFrames}>
+          Run Detection on All Frames
+        </button>
         <button onClick={exportAnnotations}>
           Export Current Frame
         </button>
@@ -248,6 +308,10 @@ function App() {
         <span style={{margin:"0 10px"}}>Frame {currentFrame + 1} / {images.length}</span>
         <button onClick={nextFrame}>Next</button>
         </div>
+        <button onClick={undoLastBox}
+                disabled={(annotations[currentFrame] || []).length === 0}>
+          Undo Last Annotation
+        </button>
         <div style={{
           marginTop:20,
           padding:15,
@@ -258,6 +322,23 @@ function App() {
         <p>Total Frames: {totalFrames}</p>
         <p>Frames Annotated: {framesAnnotated}</p>
         <p>Total Boxes: {totalBoxes}</p>
+        </div>
+        <div style={{marginTop:20}}>
+          <h3>Upload Video</h3>
+          <input
+            type="file"
+            accept="video/*"
+            onChange={(e) => setVideoFile(e.target.files[0])}
+          />
+          <input
+            type="number"
+            value={frameCount}
+            onChange={(e) => setFrameCount(parseInt(e.target.value))}
+            placeholder="Number of frames to extract"
+          />
+          <button onClick={uploadVideo} disabled={!videoFile}>
+          Extract Frames
+          </button>
         </div>
         <div style={{position:"relative", marginTop:20}}>
           {images.length > 0 && (
