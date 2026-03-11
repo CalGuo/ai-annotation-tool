@@ -1,40 +1,78 @@
 import { useState, useRef } from "react"
+import JSZip from "jszip"
+import { saveAs } from "file-saver"
 
 function App() {
-  const [file, setFile] = useState(null)
-  const [imageURL, setImageURL] = useState(null)
-  const [detections, setDetections] = useState([])
-  const [boxes, setBoxes] = useState([])
   const [drawing, setDrawing] = useState(false)
   const [startX, setStartX] = useState(0)
   const [startY, setStartY] = useState(0)
+  const [images, setImages] = useState([])
+  const [currentFrame, setCurrentFrame] = useState(0)
+  const [annotations, setAnnotations] = useState({})
 
   const canvasRef = useRef(null)
   const imageRef = useRef(null)
 
-  const handleUpload = async () => {
+  const handleDetection = async () => {
+    const response = await fetch(images[currentFrame])
+    const blob = await response.blob()
     const formData = new FormData()
-    formData.append("file", file)
-
-    const response = await fetch("http://127.0.0.1:8000/predict", {
+    formData.append("file", blob)
+    const res = await fetch("http://127.0.0.1:8000/predict", {
       method: "POST",
       body: formData
     })
 
-    const data = await response.json()
-    setDetections(data.detections)
-    setBoxes(data.detections)
+    const data = await res.json()
+    const updatedAnnotations = { ...annotations }
+    updatedAnnotations[currentFrame] = data.detections
+    setAnnotations(updatedAnnotations)
     drawBoxes(data.detections)
   }
 
-  const handleFileChange = (e) => {
-    const selectFile = e.target.files[0]
-    setFile(selectFile)
-    const url = URL.createObjectURL(selectFile)
-    setImageURL(url)
-  }
+  const exportDataset = async () => {
+    const zip = new JSZip()
+    const imagesFolder = zip.folder("dataset/images")
+    const labelsFolder = zip.folder("dataset/labels")
+    
+    for (let i = 0; i < images.length; i++) {
+      const imgURL = images[i]
+      const response = await fetch(imgURL)
+      const blob = await response.blob()
+      const imageName = `frame_${String(i).padStart(3,"0")}.jpg`
 
-  const drawBoxes = (boxes) => {
+      imagesFolder.file(imageName, blob)
+      const img = new Image()
+      img.src = imgURL
+
+
+      await new Promise(resolve => {
+        img.onload = resolve
+      })
+
+      const imgWidth = img.width
+      const imgHeight = img.height
+      const frameBoxes = annotations[i] || []
+      
+      const yoloLabels = frameBoxes.map(box => {
+        const x_center = ((box.x1 + box.x2) / 2) / imgWidth
+        const y_center = ((box.y1 + box.y2) / 2) / imgHeight
+        const width = (box.x2 - box.x1) / imgWidth
+        const height = (box.y2 - box.y1) / imgHeight
+
+        return `0 ${x_center.toFixed(6)} ${y_center.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`
+      }).join("\n")
+      
+      const labelName = `frame_${String(i).padStart(3,"0")}.txt`
+      labelsFolder.file(labelName, yoloLabels)
+  }
+  
+  const content = await zip.generateAsync({ type: "blob" })
+  saveAs(content, "dataset.zip")
+}
+
+  const frameBoxes = annotations[currentFrame] || []
+  const drawBoxes = (frameBoxes) => {
     if (!canvasRef.current || !imageRef.current) return
 
     const canvas = canvasRef.current
@@ -55,7 +93,7 @@ function App() {
     ctx.lineWidth = 2
     ctx.fillStyle = "red"
 
-    boxes.forEach(box => {
+    frameBoxes.forEach(box => {
       const x = box.x1 * scaleX
       const y = box.y1 * scaleY
       const width = (box.x2 - box.x1) * scaleX
@@ -67,6 +105,8 @@ function App() {
   }
 
   const handleMouseDown = (e) => {
+    if (!canvasRef.current || !imageRef.current) return
+
     const rect = canvasRef.current.getBoundingClientRect()
     setStartX(e.clientX - rect.left)
     setStartY(e.clientY - rect.top)
@@ -88,18 +128,24 @@ function App() {
       return
     }
 
+    const x1 = Math.min(startX, endX)
+    const y1 = Math.min(startY, endY)
+    const x2 = Math.max(startX, endX)
+    const y2 = Math.max(startY, endY)
+
     const newBox = {
-      x1: startX * scaleX,
-      y1: startY * scaleY,
-      x2: endX * scaleX,
-      y2: endY * scaleY,
+      x1: x1 * scaleX,
+      y1: y1 * scaleY,
+      x2: x2 * scaleX,
+      y2: y2 * scaleY,
       confidence: 1.0
     }
 
-    const updatedBoxes = [...boxes, newBox]
+    const updatedAnnotations = { ...annotations }
+    const frameBoxes = updatedAnnotations[currentFrame] || []
+    updatedAnnotations[currentFrame] = [...frameBoxes, newBox]
 
-    setBoxes(updatedBoxes)
-    drawBoxes(updatedBoxes)
+    setAnnotations(updatedAnnotations)
     setDrawing(false)
   }
 
@@ -113,60 +159,115 @@ function App() {
   const currentX = e.clientX - rect.left
   const currentY = e.clientY - rect.top
 
-  drawBoxes(boxes)
+  drawBoxes(annotations[currentFrame] || [])
 
   ctx.strokeStyle = "blue"
   ctx.lineWidth = 2
   ctx.strokeRect(startX, startY, currentX - startX, currentY - startY)
   }
 
-const exportAnnotations = () => {
-  if (!boxes.length) return
+  const exportAnnotations = () => {
+    const frameBoxes = annotations[currentFrame] || []
+    if (!frameBoxes.length) return
 
-  const img = imageRef.current
-  const imgWidth = img.naturalWidth
-  const imgHeight = img.naturalHeight
+    const img = imageRef.current
+    const imgWidth = img.naturalWidth
+    const imgHeight = img.naturalHeight
+    
+    const yoloLabels = frameBoxes.map (box => {
+      const x_center = ((box.x1 + box.x2) / 2) / imgWidth
+      const y_center = ((box.y1 + box.y2) / 2) / imgHeight
+      const width = (box.x2 - box.x1) / imgWidth
+      const height = (box.y2 - box.y1) / imgHeight
+      
+      return `0 ${x_center.toFixed(6)} ${y_center.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`
+    })
 
-  const yoloLabels = boxes.map(box => {
-    const x_center = ((box.x1 + box.x2) / 2) / imgWidth
-    const y_center = ((box.y1 + box.y2) / 2) / imgHeight
-    const width = (box.x2 - box.x1) / imgWidth
-    const height = (box.y2 - box.y1) / imgHeight
 
-    return `0 ${x_center.toFixed(6)} ${y_center.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`
-  })
+    const blob = new Blob([yoloLabels.join("\n")], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
 
-  const blob = new Blob([yoloLabels.join("\n")], { type: "text/plain" })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
 
-  link.href = url
-  link.download = "labels.txt"
-  link.click()
-}
+    link.href = url
+    link.download = "labels.txt"
+    link.click()
+  }
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files)
+    const urls = files.map(file => URL.createObjectURL(file))
+    setImages(urls)
+    setCurrentFrame(0)
+    const initialAnnotations = {}
+
+    urls.forEach((_, i) => {
+      initialAnnotations[i] = []
+    })
+
+    setAnnotations(initialAnnotations)
+  }
+
+  const nextFrame = () => {
+    if (currentFrame < images.length - 1) {
+      const next = currentFrame + 1
+      setCurrentFrame(next)
+    }
+  }
+
+  const prevFrame = () => {
+    if (currentFrame > 0) {
+      const prev = currentFrame - 1
+      setCurrentFrame(prev)
+    }
+  }
+
+  const totalFrames = images.length
+  const framesAnnotated = Object.values(annotations).filter(boxes => boxes.length > 0).length
+  const totalBoxes = Object.values(annotations).reduce((sum, boxes) => sum + boxes.length, 0)
 
   return (
     <div style={{padding:40}}>
-      <h1>Airway AI Annotation Tool</h1>
+      <h1>AI Annotation Tool</h1>
       <input
         type="file"
-        onChange={handleFileChange}
+        multiple
+        onChange={handleFileUpload}
         />
-        <button onClick={handleUpload}>
+        <button onClick={handleDetection} disabled={images.length === 0}>
           Run AI Detection
         </button>
         <button onClick={exportAnnotations}>
-          Export Dataset
+          Export Current Frame
         </button>
+        <button onClick={exportDataset}>
+          Export Full Dataset
+        </button>
+        <div style={{marginTop:20}}>
+        <button onClick={prevFrame}>Previous</button>
+        <span style={{margin:"0 10px"}}>Frame {currentFrame + 1} / {images.length}</span>
+        <button onClick={nextFrame}>Next</button>
+        </div>
+        <div style={{
+          marginTop:20,
+          padding:15,
+          border:"1px solid #ccc",
+          width:"300px",
+          }}>
+        <h3>Annotation Stats</h3>
+        <p>Total Frames: {totalFrames}</p>
+        <p>Frames Annotated: {framesAnnotated}</p>
+        <p>Total Boxes: {totalBoxes}</p>
+        </div>
         <div style={{position:"relative", marginTop:20}}>
-          {imageURL && (
+          {images.length > 0 && (
             <>
               <img
                 ref={imageRef}
-                src={imageURL}
+                src={images[currentFrame]}
                 alt="uploaded"
                 style={{maxWidth:"600px"}}
-                onLoad={() => drawBoxes(detections)}
+                onLoad={() => drawBoxes(annotations[currentFrame] || [])}
               />
               <canvas
                 ref={canvasRef}
