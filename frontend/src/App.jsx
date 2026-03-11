@@ -83,6 +83,11 @@ function App() {
     const scaleX = img.naturalWidth / img.clientWidth
     const scaleY = img.naturalHeight / img.clientHeight
     
+    if (Math.abs(endX - startX) < 5 || Math.abs(endY - startY) < 5) {
+      setDrawing(false)
+      return
+    }
+
     const newBox = {
       x1: startX * scaleX,
       y1: startY * scaleY,
@@ -113,6 +118,31 @@ function App() {
   ctx.strokeStyle = "blue"
   ctx.lineWidth = 2
   ctx.strokeRect(startX, startY, currentX - startX, currentY - startY)
+  }
+
+const exportAnnotations = () => {
+  if (!boxes.length) return
+
+  const img = imageRef.current
+  const imgWidth = img.naturalWidth
+  const imgHeight = img.naturalHeight
+
+  const yoloLabels = boxes.map(box => {
+    const x_center = ((box.x1 + box.x2) / 2) / imgWidth
+    const y_center = ((box.y1 + box.y2) / 2) / imgHeight
+    const width = (box.x2 - box.x1) / imgWidth
+    const height = (box.y2 - box.y1) / imgHeight
+
+    return `0 ${x_center.toFixed(6)} ${y_center.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`
+  })
+
+  const blob = new Blob([yoloLabels.join("\n")], { type: "text/plain" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+
+  link.href = url
+  link.download = "labels.txt"
+  link.click()
 }
 
   return (
@@ -124,6 +154,9 @@ function App() {
         />
         <button onClick={handleUpload}>
           Run AI Detection
+        </button>
+        <button onClick={exportAnnotations}>
+          Export Dataset
         </button>
         <div style={{position:"relative", marginTop:20}}>
           {imageURL && (
