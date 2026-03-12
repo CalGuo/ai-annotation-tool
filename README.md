@@ -17,7 +17,7 @@ This project provides a full-stack tool for uploading images or videos, extracti
 
 ## Installation
 
-### 1. Clone the Repository
+### 1. Clone Repository
 ```bash
 git clone https://github.com/GITHUB_USERNAME/ai-annotation-tool.git
 cd ai-annotation-tool
